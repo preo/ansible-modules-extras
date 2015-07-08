@@ -58,31 +58,54 @@ EXAMPLES = '''
 
 import sys  # noqa
 import json
-
-HAS_REQUESTS = False
-try:
-    import requests
-    HAS_REQUESTS = True
-except ImportError:
-    pass
+import re
 
 
 API_BASE = 'https://api.github.com'
 
 
+class GitHubResponse(object):
+    def __init__(self, response, info):
+        self.content = response.read()
+        self.info = info
+
+    def json(self):
+        return json.loads(self.content)
+
+    def links(self):
+        links = {}
+        if 'link' in self.info:
+            link_header = re.info['link']
+            matches = re.findall('<([^>]+)>; rel="([^"]+)"', link_header)
+            for url, rel in matches:
+                links[rel] = url
+        return links
+
+
+class GitHubSession(object):
+    def __init__(self, module, token):
+        self.module = module
+        self.token = token
+
+    def request(self, method, url, data=None):
+        headers = {
+            'Authorization': 'token {}'.format(self.token),
+            'Content-Type': 'application/json',
+            'Accept': 'application/vnd.github.v3+json',
+        }
+        response, info = fetch_url(
+            self.module, url, method=method, data=data, headers=headers)
+        return GitHubResponse(response, info)
+
+
 def get_all_keys(session):
     url = API_BASE + '/user/keys'
-    while True:
-        r = session.get(url)
-        r.raise_for_status()
-
+    while url:
+        r = session.request('GET', url)
         for key in r.json():
             yield key
 
-        if 'next' not in r.links:
-            break
-
-        url = r.links['next']['url']
+        url = r.links().get('next')
 
 
 def create_key(session, name, pubkey, check_mode):
@@ -99,11 +122,10 @@ def create_key(session, name, pubkey, check_mode):
             'verified': False
         }
     else:
-        response = session.post(
+        return session.request(
+            'POST',
             API_BASE + '/user/keys',
-            data=json.dumps({'title': name, 'key': pubkey}))
-        response.raise_for_status()
-        return response.json()
+            data=json.dumps({'title': name, 'key': pubkey})).json()
 
 
 def delete_keys(session, to_delete, check_mode):
@@ -111,8 +133,7 @@ def delete_keys(session, to_delete, check_mode):
         return
 
     for key in to_delete:
-        r = session.delete(API_BASE + '/user/keys/{[id]}'.format(key))
-        r.raise_for_status()
+        session.request('DELETE', API_BASE + '/user/keys/{[id]}'.format(key))
 
 
 def ensure_key_absent(session, name, check_mode):
@@ -162,8 +183,6 @@ def main():
         argument_spec=argument_spec,
         supports_check_mode=True,
     )
-    if not HAS_REQUESTS:
-        module.fail_json(msg='this module requires the "requests" library')
 
     token = module.params['token']
     name = module.params['name']
@@ -174,34 +193,21 @@ def main():
         module.fail_json(
             msg='"pubkey" parameter is required when state is "present"')
 
-    session = requests.Session()
-    session.headers.update({
-        'Authorization': 'token {}'.format(token),
-        'Content-Type': 'application/json',
-        'Accept': 'application/vnd.github.v3+json',
-    })
-    try:
-        if state == 'present':
-            result = ensure_key_present(session, name, pubkey, update=False,
-                                        check_mode=module.check_mode)
-        elif state == 'updated':
-            result = ensure_key_present(session, name, pubkey, update=True,
-                                        check_mode=module.check_mode)
-        elif state == 'absent':
-            result = ensure_key_absent(session, name,
-                                       check_mode=module.check_mode)
-    except requests.RequestException, e:
-        try:
-            message = e.response.json()['message']
-        except:
-            message = '{} {}'.format(e, e.response.content)
-
-        module.fail_json(msg='There was a problem managing a github key: {}'
-                         .format(message))
+    session = GitHubSession(module, token)
+    if state == 'present':
+        result = ensure_key_present(session, name, pubkey, update=False,
+                                    check_mode=module.check_mode)
+    elif state == 'updated':
+        result = ensure_key_present(session, name, pubkey, update=True,
+                                    check_mode=module.check_mode)
+    elif state == 'absent':
+        result = ensure_key_absent(session, name,
+                                   check_mode=module.check_mode)
 
     module.exit_json(**result)
 
 from ansible.module_utils.basic import *  # noqa
+from ansible.module_utils.urls import *  # noqa
 
 if __name__ == '__main__':
     main()
