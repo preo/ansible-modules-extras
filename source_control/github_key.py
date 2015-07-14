@@ -157,27 +157,20 @@ def ensure_key_absent(session, name, check_mode):
 
 
 def ensure_key_present(session, name, pubkey, force, check_mode):
-    matching = [k for k in get_all_keys(session) if k['title'] == name]
-    changed = False
+    matching_keys = [k for k in get_all_keys(session) if k['title'] == name]
+    deleted_keys = []
 
-    if force and matching:
-        delete_keys(session, matching, check_mode=check_mode)
-        changed = True
-        out['deleted_keys'] = matching
+    if matching_keys and force and matching_keys[0]['key'] != pubkey:
+        delete_keys(session, matching_keys, check_mode=check_mode)
+        (deleted_keys, matching_keys) = (matching_keys, [])
 
-    if matching and not force:
-        key = matching[0]
-    else:
-        changed = True
+    if not matching_keys:
         key = create_key(session, name, pubkey, check_mode=check_mode)
-
-    if force:
-        (deleted_keys, matching_keys) = (matching, [])
     else:
-        (deleted_keys, matching_keys) = ([], matching)
+        key = matching_keys[0]
 
     return {
-        'changed': changed,
+        'changed': bool(deleted_keys or not matching_keys),
         'deleted_keys': deleted_keys,
         'matching_keys': matching_keys,
         'key': key
@@ -203,7 +196,15 @@ def main():
     force = module.params['force']
     pubkey = module.params.get('pubkey')
 
-    if state == 'present' and not pubkey:
+    if pubkey:
+        pubkey_parts = pubkey.split(' ')
+        # Keys consist of a protocol, the key data, and an optional comment.
+        if len(pubkey_parts) < 2:
+            module.fail_json(msg='"pubkey" parameter has an invalid format')
+
+        # Strip out comment so we can compare to the keys GitHub returns.
+        pubkey = ' '.join(pubkey_parts[:2])
+    elif state == 'present':
         module.fail_json(msg='"pubkey" is requred when state=present')
 
     session = GitHubSession(module, token)
