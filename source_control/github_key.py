@@ -31,13 +31,22 @@ options:
     required: true
   pubkey:
     description:
-      - SSH public key value. Required when state=present or state=updated.
+      - SSH public key value. Required when state=present.
     required: false
   state:
     description:
       - Whether to remove a key, ensure that it exists, or update its value.
-    choices: ['present', 'absent', 'updated']
+    choices: ['present', 'absent']
     default: 'present'
+    required: false
+  force:
+    description:
+      - The default is C(yes), which will replace the existing remote key
+        if it's different than C(pubkey). If C(no), the key will only be
+        set if no key with the given C(name) exists.
+    required: false
+    choices: ['yes', 'no']
+    default: 'yes'
 
 author: Robert Estelle (@erydo)
 '''
@@ -147,22 +156,22 @@ def ensure_key_absent(session, name, check_mode):
     return {'changed': bool(to_delete), 'deleted_keys': to_delete}
 
 
-def ensure_key_present(session, name, pubkey, update, check_mode):
+def ensure_key_present(session, name, pubkey, force, check_mode):
     matching = [k for k in get_all_keys(session) if k['title'] == name]
     changed = False
 
-    if update and matching:
+    if force and matching:
         delete_keys(session, matching, check_mode=check_mode)
         changed = True
         out['deleted_keys'] = matching
 
-    if matching and not update:
+    if matching and not force:
         key = matching[0]
     else:
         changed = True
         key = create_key(session, name, pubkey, check_mode=check_mode)
 
-    if update:
+    if force:
         (deleted_keys, matching_keys) = (matching, [])
     else:
         (deleted_keys, matching_keys) = ([], matching)
@@ -179,9 +188,9 @@ def main():
     argument_spec = {
         'token': {'required': True},
         'name': {'required': True},
-        'pubkey': {'required': False},
-        'state': {'choices': ['present', 'absent', 'updated'],
-                  'default': 'present'},
+        'pubkey': {},
+        'state': {'choices': ['present', 'absent'], 'default': 'present'},
+        'force': {'default': True, 'type': 'bool'},
     }
     module = AnsibleModule(
         argument_spec=argument_spec,
@@ -191,22 +200,18 @@ def main():
     token = module.params['token']
     name = module.params['name']
     state = module.params['state']
+    force = module.params['force']
     pubkey = module.params.get('pubkey')
 
-    if state in ('present', 'updated') and not pubkey:
-        module.fail_json(
-            msg='"pubkey" parameter is required when state is "present"')
+    if state == 'present' and not pubkey:
+        module.fail_json(msg='"pubkey" is requred when state=present')
 
     session = GitHubSession(module, token)
     if state == 'present':
-        result = ensure_key_present(session, name, pubkey, update=False,
-                                    check_mode=module.check_mode)
-    elif state == 'updated':
-        result = ensure_key_present(session, name, pubkey, update=True,
+        result = ensure_key_present(session, name, pubkey, force=force,
                                     check_mode=module.check_mode)
     elif state == 'absent':
-        result = ensure_key_absent(session, name,
-                                   check_mode=module.check_mode)
+        result = ensure_key_absent(session, name, check_mode=module.check_mode)
 
     module.exit_json(**result)
 
