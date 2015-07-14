@@ -31,7 +31,7 @@ options:
     required: true
   pubkey:
     description:
-      - SSH public key value. Required when state=present
+      - SSH public key value. Required when state=present or state=updated.
     required: false
   state:
     description:
@@ -189,7 +189,7 @@ def main():
     state = module.params['state']
     pubkey = module.params.get('pubkey')
 
-    if state == 'present' and not pubkey:
+    if state in ('present', 'updated') and not pubkey:
         module.fail_json(
             msg='"pubkey" parameter is required when state is "present"')
 
