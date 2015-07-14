@@ -95,6 +95,10 @@ class GitHubSession(object):
         }
         response, info = fetch_url(
             self.module, url, method=method, data=data, headers=headers)
+        if not (200 <= info['status'] < 400):
+            self.module.fail_json(
+                msg=(" failed to send request %s to %s: %s"
+                     % (method, url, info['msg'])))
         return GitHubResponse(response, info)
 
 
