@@ -19,7 +19,7 @@ module: github_key
 short_description: Manage GitHub access keys.
 description:
     - Creates, removes, or updates GitHub access keys.
-This module has a dependency on requests.
+version_added: "2.0"
 options:
   token:
     description:
