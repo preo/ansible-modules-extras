@@ -31,8 +31,9 @@ options:
     required: true
   pubkey:
     description:
-      - SSH public key value. Required when state=present.
+      - SSH public key value. Required when C(state=present).
     required: false
+    default: none
   state:
     description:
       - Whether to remove a key, ensure that it exists, or update its value.
