@@ -205,7 +205,7 @@ def main():
         # Strip out comment so we can compare to the keys GitHub returns.
         pubkey = ' '.join(pubkey_parts[:2])
     elif state == 'present':
-        module.fail_json(msg='"pubkey" is requred when state=present')
+        module.fail_json(msg='"pubkey" is required when state=present')
 
     session = GitHubSession(module, token)
     if state == 'present':
